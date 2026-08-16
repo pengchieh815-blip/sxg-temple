@@ -221,11 +221,17 @@ export default function App(){
     lunarMonth:"1月", lunarDay:"1日",
     phone:"", address:"",
     cats:[], lights:[], pudos:[], pudoNotes:{},
-    treasurySeason:"", sponsorAmount:"", note:"", customNotes:{},
+    treasurySeason:"", sponsorAmount:"", note:"", customNotes:{}, transferCode:"",
   });
   const [form, setForm] = useState(blankForm);
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
   const clrE = (...ks) => setErr(e=>{ const n={...e}; ks.forEach(k=>delete n[k]); return n; });
+
+  // 貼圖提示
+  const [showStickerMsg, setShowStickerMsg] = useState(false);
+
+  // 轉帳資訊
+  const [transferInfo, setTransferInfo] = useState({bank:"○○銀行 八里分行", account:"000-000-000000", name:"無極受玄宮"});
 
   // 自訂活動 state（需要在 total 計算前定義）
   const [customActs,    setCustomActs]    = useState([]);
@@ -263,7 +269,7 @@ export default function App(){
     if(form.pudos.includes("ancestor")&&!form.pudoNotes?.ancestor?.trim()) e.noteAncestor="請填寫祖先姓名";
     if(form.pudos.includes("baby")    &&!form.pudoNotes?.baby?.trim())     e.noteBaby    ="請填寫嬰靈資訊";
     if(form.cats.includes("treasury") &&!form.treasurySeason) e.treasurySeason="請選擇春季或秋季";
-    if(form.cats.includes("sponsor")&&(!form.sponsorAmount||+form.sponsorAmount<=0)) e.sponsorAmount="請填寫善款金額";
+    if(form.payMethod==="transfer"&&!form.transferCode.trim()) e.transferCode="請填寫轉帳末五碼";
     setErr(e);
     return Object.keys(e).length===0;
   };
@@ -287,6 +293,7 @@ export default function App(){
         ...preview,
         payMethod: method,
         payStatus: "pending",
+        transferCode: method==="transfer" ? form.transferCode : "",
       };
       const docRef = await addDoc(collection(db,"registrations"), rec);
       const saved = {id:docRef.id, ...rec};
@@ -349,7 +356,24 @@ export default function App(){
   const [editActData,   setEditActData]   = useState({});
 
   // 自訂活動 Firebase
-  const fetchCustomActs = useCallback(async()=>{
+  const fetchTransferInfo = useCallback(async()=>{
+    try {
+      const snap = await getDocs(collection(db,"transferInfo"));
+      if(!snap.empty){ setTransferInfo(snap.docs[0].data()); }
+    } catch(e){ console.error(e); }
+  },[]);
+
+  const saveTransferInfo = async (info) => {
+    try {
+      const snap = await getDocs(collection(db,"transferInfo"));
+      if(snap.empty){ await addDoc(collection(db,"transferInfo"),info); }
+      else { await updateDoc(doc(db,"transferInfo",snap.docs[0].id),info); }
+      setTransferInfo(info);
+      alert("轉帳資訊已儲存！");
+    } catch(e){ alert("儲存失敗："+e.message); }
+  };
+
+  useEffect(()=>{ fetchTransferInfo(); },[fetchTransferInfo]);
     try {
       const snap = await getDocs(collection(db,"customActs"));
       if(!snap.empty){ setCustomActs(snap.docs[0].data().acts||[]); }
@@ -778,11 +802,16 @@ export default function App(){
               <div style={{marginTop:14,padding:"12px 14px",background:C.goldL,borderRadius:8,border:`1px solid ${C.gold}50`}}>
                 <div style={{fontWeight:700,fontSize:13,color:C.gold,marginBottom:8}}>🏦 匯款帳號資訊</div>
                 <div style={{fontSize:13,color:C.text,lineHeight:2}}>
-                  <div>銀行：○○銀行 八里分行</div>
-                  <div>帳號：000-000-000000</div>
-                  <div>戶名：無極受玄宮</div>
+                  <div>銀行：{transferInfo.bank}</div>
+                  <div>帳號：{transferInfo.account}</div>
+                  <div>戶名：{transferInfo.name}</div>
                 </div>
                 <div style={{fontSize:11,color:C.sub,marginTop:8}}>※ 匯款後請將收據照片傳至廟方聯絡人</div>
+                <div style={{marginTop:12}}>
+                  <Lbl t="轉帳末五碼 *"/>
+                  <input value={form.transferCode} onChange={e=>{set("transferCode",e.target.value);clrE("transferCode");}} placeholder="請輸入轉帳末五碼" maxLength={5} style={{...inp,letterSpacing:4,fontSize:16,textAlign:"center"}}/>
+                  <Err c={err.transferCode}/>
+                </div>
               </div>
             )}
           </div>
@@ -890,11 +919,12 @@ export default function App(){
             <div style={{background:C.goldL,border:`1px solid ${C.gold}50`,borderRadius:10,padding:"12px 16px",marginBottom:16,textAlign:"left"}}>
               <div style={{fontWeight:700,fontSize:13,color:C.gold,marginBottom:6}}>🏦 匯款帳號資訊</div>
               <div style={{fontSize:13,color:C.text,lineHeight:2}}>
-                <div>銀行：○○銀行 八里分行</div>
-                <div>帳號：000-000-000000</div>
-                <div>戶名：無極受玄宮</div>
+                <div>銀行：{transferInfo.bank}</div>
+                <div>帳號：{transferInfo.account}</div>
+                <div>戶名：{transferInfo.name}</div>
               </div>
               <div style={{fontSize:11,color:C.sub,marginTop:6}}>※ 匯款後請將收據照片傳至廟方聯絡人</div>
+              {done.transferCode&&<div style={{marginTop:8,fontWeight:700,color:C.red,fontSize:13}}>轉帳末五碼：{done.transferCode}</div>}
             </div>
           )}
           <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,padding:"20px 18px",textAlign:"left",marginBottom:16,boxShadow:"0 1px 6px #0000000d"}}>
@@ -1052,6 +1082,24 @@ export default function App(){
                   );
                 })}
               </div>
+            </div>
+
+            {/* 轉帳資訊設定 */}
+            <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 16px",marginBottom:14,boxShadow:"0 1px 4px #0000000a"}}>
+              <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:12,paddingBottom:8,borderBottom:`1px solid ${C.border}`}}>🏦 轉帳資訊設定</div>
+              <div style={{marginBottom:8}}>
+                <Lbl t="銀行名稱"/>
+                <input value={transferInfo.bank} onChange={e=>setTransferInfo(t=>({...t,bank:e.target.value}))} style={inp} placeholder="○○銀行 八里分行"/>
+              </div>
+              <div style={{marginBottom:8}}>
+                <Lbl t="帳號"/>
+                <input value={transferInfo.account} onChange={e=>setTransferInfo(t=>({...t,account:e.target.value}))} style={inp} placeholder="000-000-000000"/>
+              </div>
+              <div style={{marginBottom:12}}>
+                <Lbl t="戶名"/>
+                <input value={transferInfo.name} onChange={e=>setTransferInfo(t=>({...t,name:e.target.value}))} style={inp} placeholder="無極受玄宮"/>
+              </div>
+              <button onClick={()=>saveTransferInfo(transferInfo)} style={{padding:"8px 18px",background:C.red,border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>儲存轉帳資訊</button>
             </div>
 
             {/* 自訂活動設定 */}
@@ -1230,7 +1278,7 @@ export default function App(){
                   </div>
                 )}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{fontSize:11,color:C.muted}}>{r.registeredAt}　{r.payMethod==="atTemple"?"🏮到宮繳費":r.payMethod==="transfer"?"🏦匯款":""}</span>
+                  <span style={{fontSize:11,color:C.muted}}>{r.registeredAt}　{r.payMethod==="atTemple"?"🏮到宮繳費":r.payMethod==="transfer"?`🏦匯款${r.transferCode?` (末五碼:${r.transferCode})`:""}`:""}</span>
                   <span style={{fontWeight:700,color:C.red}}>NT$ {r.total?.toLocaleString()}</span>
                 </div>
               </div>
@@ -1243,7 +1291,17 @@ export default function App(){
       </div>
 
       {/* 浮動神明貼圖 */}
-      <div style={{position:"fixed",bottom:20,right:16,zIndex:900,width:80,height:80,filter:"drop-shadow(0 4px 12px rgba(0,0,0,0.25))",animation:"bobbing 3s ease-in-out infinite"}}>
+      {showStickerMsg&&(
+        <div onClick={()=>setShowStickerMsg(false)} style={{position:"fixed",inset:0,background:"#0004",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"flex-end",paddingBottom:110,paddingRight:16}}>
+          <div style={{background:"#fff",borderRadius:14,padding:"14px 18px",maxWidth:220,boxShadow:"0 4px 20px #0003",textAlign:"center"}}>
+            <div style={{fontSize:14,color:C.text,marginBottom:10,lineHeight:1.6}}>任何問題請聯繫官方 LINE 🙏</div>
+            <a href={LINE_URL} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{display:"inline-flex",alignItems:"center",gap:6,background:"#06C755",borderRadius:8,padding:"8px 16px",color:"#fff",fontWeight:700,fontSize:13,textDecoration:"none"}}>
+              {LINE_SVG_SM} 加入 LINE
+            </a>
+          </div>
+        </div>
+      )}
+      <div onClick={()=>setShowStickerMsg(v=>!v)} style={{position:"fixed",bottom:20,right:16,zIndex:900,width:80,height:80,filter:"drop-shadow(0 4px 12px rgba(0,0,0,0.25))",animation:"bobbing 3s ease-in-out infinite",cursor:"pointer"}}>
         <img src={STICKER_IMG} alt="神明貼圖" style={{width:"100%",height:"100%",objectFit:"contain",objectPosition:"top"}}/>
       </div>
       <style>{`@keyframes bobbing{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}`}</style>
